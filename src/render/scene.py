@@ -47,14 +47,14 @@ class Scene(BaseLifecycleComponent, abc.ABC):
 
         self.initial_transform = Transform()
 
-        self._update(self.current_second)
-
         self.render_time = 0
         self.process_time = 0
 
         self.current_image = None
 
         self._has_yielded = False
+
+        self.initialize_image_pool()
 
     @property
     def width(self):
@@ -83,6 +83,8 @@ class Scene(BaseLifecycleComponent, abc.ABC):
         return self._first_frame
 
     def __iter__(self):
+        self._update(self.current_second)
+
         try:
             while True:
                 start = time.perf_counter()
@@ -109,69 +111,35 @@ class Scene(BaseLifecycleComponent, abc.ABC):
 
                             update_funcs.append(candidate_func)
 
-                        if self.current_second < candidate_second:
                             update_required = update_required or is_required
-
-                if self.first_frame:
-                    self.initialize_image_pool()
-                    self._first_frame = False
 
                 self.process_time += time.perf_counter() - start
 
-                if update_funcs:
-                    if update_required or self.min_duration > self.current_second:
-                        self.current_second = next_second
+                if update_funcs and (update_required or self.min_duration > self.current_second):
+                    self.current_second = next_second
 
-                        for func in update_funcs:
-                            func(next_second)
+                    for func in update_funcs:
+                        func(next_second)
 
-                        if self.min_frame_duration < self.current_second - self.current_frame_second:
-                            if self.current_frame_second > 0:
-                                yield self.current_image.image, self.current_second - self.current_frame_second
-                                self._has_yielded = True
+                    if self._first_frame or self.min_frame_duration < self.current_second - self.current_frame_second:
+                        self.current_image = self.render_frame()
 
-                            self.current_image = self.render_frame()
-
-                            if len(self.image_pool) > 300:
-                                self.image_pool.remove_dead_indexes()
-
-                            self.current_frame_second = self.current_second
-
-                    else:
-                        if self.current_second - self.current_frame_second > 0:
-                            # yield the last frame and it's duration if it has a duration
-                            # else just move on because it has no duration anyways
-
+                        if not self._first_frame:
                             yield self.current_image.image, self.current_second - self.current_frame_second
 
-                        elif not self._has_yielded:
-                            # has to yield something
-                            yield self.current_image.image, self.current_frame_second
-
-                        self.cleanup_objects()
-                        return
+                        self._first_frame = False
+                        self.current_frame_second = self.current_second
 
                 else:
-                    if self.current_frame_second < self.min_duration:
-                        # fill in the rest of the duration
-                        yield self.current_image.image, self.min_duration - self.current_frame_second
-
-                    elif not self._has_yielded:
-                        # has to yield something
-                        yield self.current_image.image, self.current_frame_second
-
-                    self.cleanup_objects()
-                    return
+                    if self.min_duration > self.current_second:
+                        yield self.current_image.image, self.min_duration - self.current_second
+                    break
 
         finally:
             self.cleanup_objects()
 
     def initialize_image_pool(self):
         self.image_pool = ImagePool()
-
-        # have a few images already pooled if there's necessity
-        self.image_pool.pool_image(self.width, self.height)
-        self.image_pool.pool_image(self.width * 2, self.height * 2)
 
     def draw_object(self, obj):
         self.drawing_objects.append(obj)
