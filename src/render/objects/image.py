@@ -62,7 +62,8 @@ class ImageComponent(DrawableComponent):
 
     @property
     def animated(self):
-        return "loop" in self._image.info or "duration" in self._image.info
+        # only certain formats having is_animated is a bit of a bad decision but alright
+        return getattr(self.image, "is_animated", False)
 
     @property
     def duration(self):
