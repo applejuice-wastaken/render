@@ -20,6 +20,12 @@ def run_scene(scene: Scene, io=None, *,
     first_frame = None
     first_duration = None
 
+    if kwargs_if_static is None:
+        kwargs_if_static = {}
+
+    if kwargs_if_animated is None:
+        kwargs_if_animated = {}
+
     if io is None:
         io = BytesIO()
 
