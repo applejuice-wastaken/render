@@ -123,16 +123,23 @@ class Scene(BaseLifecycleComponent, abc.ABC):
 
                     if self._first_frame or self.min_frame_duration < self.current_second - self.current_frame_second:
                         self.current_image = self.render_frame()
+                        old_frame_second = self.current_frame_second
+                        self.current_frame_second = self.current_second
 
                         if not self._first_frame:
-                            yield self.current_image.image, self.current_second - self.current_frame_second
+                            yield self.current_image.image, self.current_second - old_frame_second
+                            self._has_yielded = True
 
                         self._first_frame = False
-                        self.current_frame_second = self.current_second
 
                 else:
                     if self.min_duration > self.current_second:
                         yield self.current_image.image, self.min_duration - self.current_second
+                        self._has_yielded = True
+
+                    if not self._has_yielded:
+                        yield self.current_image.image, 0
+
                     break
 
         finally:
