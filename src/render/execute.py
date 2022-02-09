@@ -12,7 +12,7 @@ if TYPE_CHECKING:
 
 
 def run_scene(scene: Scene, io=None, *, format_if_animated="gif", format_if_static="png",
-              callback: typing.Callable[[typing.IO, float], None] = lambda *_: None):
+              callback: typing.Callable[[typing.IO, float], bool] = lambda *_: True):
     first_frame = None
     first_duration = None
 
@@ -32,14 +32,20 @@ def run_scene(scene: Scene, io=None, *, format_if_animated="gif", format_if_stat
 
                 writer._duration = first_duration
                 writer.append_data(numpy.array(first_frame))
-                callback(io, scene.current_frame_second)
+
+                if not callback(io, scene.current_frame_second):
+                    raise RuntimeError("Callback stopped execution")
 
             writer._duration = duration
             writer.append_data(numpy.array(image))
-            callback(io, scene.current_frame_second)
+
+            if not callback(io, scene.current_frame_second):
+                raise RuntimeError("Callback stopped execution")
 
     if writer is None:
         first_frame.save(io, format_if_static)
-        callback(io, scene.current_frame_second)
+
+        if not callback(io, scene.current_frame_second):
+            raise RuntimeError("Callback stopped execution")
 
     return io, writer is not None
