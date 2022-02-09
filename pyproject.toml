@@ -1,6 +1,6 @@
 [tool.poetry]
 name = "render"
-version = "0.2.0"
+version = "0.3.0"
 description = "render thing I did for my bot"
 authors = ["applejuice <30875598+applejuice-wastaken@users.noreply.github.com>"]
 
