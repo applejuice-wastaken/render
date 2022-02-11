@@ -7,12 +7,15 @@ import pyopencl as cl
 from PIL import Image
 
 from render.rendering.pillow.drawing import ImageDrawCombination
-from ..component import DrawableComponent, get_box_from_transform
+from ..component import DrawableComponent
 from ..rendering.opencl.component import DrawableComponentHAPillowRenderer
-from ..rendering.opencl.renderer import HAPillowRenderer, include_general_functions
+from ..rendering.opencl.renderer import HAPillowRenderer
 from ..rendering.pillow.component import DrawableComponentPillowRenderer
 
 from ..transform import Transform
+
+if typing.TYPE_CHECKING:
+    from ..rendering.opencl.kernel_registry import ClassBoundKernelRegistry
 
 
 class ImagePillowRenderer(DrawableComponentPillowRenderer):
@@ -45,8 +48,6 @@ class ImagePillowRenderer(DrawableComponentPillowRenderer):
 
 
 draw_image = """
-__constant sampler_t sampler = CLK_NORMALIZED_COORDS_FALSE | CLK_FILTER_NEAREST | CLK_ADDRESS_CLAMP_TO_EDGE;
-
 __kernel void __NAME(__write_only image2d_t target, __read_only image2d_t image, 
                         float t1, float t2, float t3, float t4, float t5, float t6)
 {
@@ -68,11 +69,11 @@ __kernel void __NAME(__write_only image2d_t target, __read_only image2d_t image,
 """
 
 
-class RectangleHAPillowRenderer(DrawableComponentHAPillowRenderer):
+class ImageHAPillowRenderer(DrawableComponentHAPillowRenderer):
     component: ImageComponent
 
     def _enqueue(self, target: cl.Image, transform: Transform, *, event=None) -> cl.Event:
-        rectangle_kernel: cl.Kernel = self.renderer.programs["draw_rectangle"].draw_rect
+        rectangle_kernel: cl.Kernel = self.programs["draw_image"]
 
         rectangle_kernel.set_arg(0, target)
         rectangle_kernel.set_arg(1, numpy.array(self.component.image))
@@ -83,8 +84,8 @@ class RectangleHAPillowRenderer(DrawableComponentHAPillowRenderer):
         return cl.enqueue_nd_range_kernel(self.renderer.queue, rectangle_kernel, self.renderer.scene_shape, None)
 
     @classmethod
-    def register_programs(cls, renderer: HAPillowRenderer, isolation):
-        cls.mask_image_binding = isolation.register_kernel("draw_image", draw_image)
+    def register_programs(cls, renderer: HAPillowRenderer, reg: ClassBoundKernelRegistry):
+        reg.register_program("draw_image", draw_image)
 
 
 class ImageComponent(DrawableComponent):
@@ -185,5 +186,6 @@ class ImageComponent(DrawableComponent):
         from ..rendering.pillow.renderer import PillowRenderer
 
         return {
-            PillowRenderer: ImagePillowRenderer
+            PillowRenderer: ImagePillowRenderer,
+            HAPillowRenderer: ImageHAPillowRenderer
         }

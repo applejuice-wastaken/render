@@ -10,7 +10,7 @@ imageio = "^2.15.0"
 Pillow = "^9.0.1"
 numpy = "^1.22.2"
 pytweening = "^1.0.4"
-pyopencl = "^2022.1"
+pyopencl = "^2021.2.13"
 
 [tool.poetry.dev-dependencies]
 

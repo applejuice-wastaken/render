@@ -5,37 +5,38 @@ import typing
 from typing import TYPE_CHECKING
 
 from render.rendering.abc import DrawableComponentRenderer
+
 from render.transform import Transform, transform_in_transform
 import pyopencl as cl
 from render.rendering.opencl.renderer import BoundProgramRegistry
 
 if TYPE_CHECKING:
-    from render.rendering.opencl.kernel_registry import KernelRegistryIsolation
+    from render.rendering.opencl.kernel_registry import ClassBoundKernelRegistry
     from render.rendering.opencl.renderer import HAPillowRenderer
 
-masking_code = """
-__constant sampler_t sampler = CLK_NORMALIZED_COORDS_FALSE | CLK_FILTER_NEAREST | CLK_ADDRESS_CLAMP_TO_EDGE;
-
-float blend(float start, float end, float percentage) {
+code = """
+float bl(float start, float end, float percentage) {
     return start * (1 - percentage) + end * percentage;
 }
 
-__kernel void __NAME(__write_only image2d_t target, __read_only image2d_t image, __read_only image2d_t mask, 
+__kernel void mask_image(__write_only image2d_t target, __read_only image2d_t image, __read_only image2d_t mask, 
                          short channel)
 {
     int x = get_global_id(0);
     int y = get_global_id(1);
     
-    float4 mask_color = read_imagef(mask, sampler, (int2)(x, y));
-    float4 image_color = read_imagef(image, sampler, (int2)(x, y));
-    float4 target_color = read_imagef(target, sampler, (int2)(x, y));
+    float4 mask_color = read_imagef(mask, (int2)(x, y));
+    float4 image_color = read_imagef(image, (int2)(x, y));
+    float4 target_color = read_imagef(target, (int2)(x, y));
     
-    float blend = mask_color[channel];
+    float blend = mask_color.w;
     
-    float4 blended = (float4)(blend(target_color[0], image_color[0], blend),
-                               blend(target_color[1], image_color[1], blend),
-                               blend(target_color[2], image_color[2], blend),
-                               blend(target_color[3], image_color[3], blend))
+    float4 blended = (float4)(
+        bl(target_color.x, image_color.x, blend),
+        bl(target_color.y, image_color.y, blend),
+        bl(target_color.z, image_color.z, blend),
+        bl(target_color.w, image_color.w, blend)
+    );
     
     write_imagef(target, (int2)(x, y), blended);
 }
@@ -80,8 +81,9 @@ class DrawableComponentHAPillowRenderer(DrawableComponentRenderer, abc.ABC):
         pass
 
     @classmethod
-    def register_programs(cls, renderer: HAPillowRenderer, isolation: KernelRegistryIsolation):
-        cls.mask_image_binding = isolation.register_kernel("mask_image", masking_code)
+    def register_programs(cls, renderer: HAPillowRenderer, reg: ClassBoundKernelRegistry):
+        """Warning: Do NOT super call in this method, it is handled automatically"""
+        reg.register_program("mask_image", code)
 
     @property
     def programs(self):

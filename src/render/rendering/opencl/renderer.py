@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import typing
 from typing import TYPE_CHECKING
 
 import numpy
@@ -11,20 +12,7 @@ import pyopencl as cl
 from render.rendering.opencl.kernel_registry import KernelRegistry
 
 if TYPE_CHECKING:
-    pass
-
-affine_transform = """
-int2 transform(int2 coords, float3* transformationMatrix) {
-    return (int2)(
-        coords.x * transformationMatrix[0].x + coords.y * transformationMatrix[0].y + transformationMatrix[0].z, 
-        coords.x * transformationMatrix[1].x + coords.y * transformationMatrix[1].y + transformationMatrix[1].z
-    );
-}
-"""
-
-
-def include_general_functions(code):
-    return affine_transform + code
+    from render.rendering.opencl.component import DrawableComponentHAPillowRenderer
 
 
 class BoundProgramRegistry:
@@ -32,8 +20,9 @@ class BoundProgramRegistry:
         self.cls = cls
         self.renderer = renderer
 
+    # noinspection PyProtectedMember
     def __getitem__(self, item):
-        return self.renderer.registered_classes[self.cls][item].kernel
+        return self.renderer.kernel_registry.registered_classes[self.cls][item].kernel
 
 
 class HAPillowRenderer(Renderer):
@@ -42,8 +31,6 @@ class HAPillowRenderer(Renderer):
 
         self.context = context
         self.queue = cl.CommandQueue(context)
-
-        self.registered_classes = {}
 
         self.output_arr = None
         self.output = None
@@ -80,17 +67,19 @@ class HAPillowRenderer(Renderer):
         return self.scene.width, self.scene.height
 
     def drawing_objects_changed(self):
-        chunk_program = None
-
         for obj in self.scene.drawing_objects:
-            if type(obj.renderer) not in self.registered_classes:
-                if chunk_program is None:
-                    chunk_program = self.kernel_registry.create_program()
+            if type(obj.renderer) not in self.kernel_registry.registered_classes:
+                self.register_class(type(obj.renderer))
 
-                with chunk_program.isolate() as isolation:
-                    type(obj.renderer).register_programs(self, isolation)
+    def register_class(self, cls: typing.Type[DrawableComponentHAPillowRenderer]):
+        from render.rendering.opencl.component import DrawableComponentHAPillowRenderer  # circular import
 
-                    self.registered_classes[type(obj.renderer)] = isolation.kernel_bindings
+        reg = self.kernel_registry.init_class(cls)
+        cls.register_programs(self, reg)
 
-        if chunk_program is not None:
-            chunk_program.compile()
+        for supercls in cls.__bases__:
+            if (issubclass(supercls, DrawableComponentHAPillowRenderer) and
+                    "register_programs" in supercls.__dict__ and
+                    not self.kernel_registry.registered(supercls)
+            ):
+                self.register_class(supercls)

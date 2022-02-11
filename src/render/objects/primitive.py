@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import typing
+
 import numpy
 import pyopencl as cl
 import pyopencl.array
@@ -7,10 +9,14 @@ import pyopencl.array
 from render.rendering.pillow.drawing import ImageDrawCombination
 from ..component import DrawableComponent
 from ..rendering.opencl.component import DrawableComponentHAPillowRenderer
-from ..rendering.opencl.renderer import HAPillowRenderer, include_general_functions
+from ..rendering.opencl.renderer import HAPillowRenderer
 from ..rendering.pillow.component import DrawableComponentPillowRenderer
 from ..rendering.pillow.renderer import PillowRenderer
 from ..transform import Transform
+
+
+if typing.TYPE_CHECKING:
+    from ..rendering.opencl.kernel_registry import ClassBoundKernelRegistry
 
 
 class RectanglePillowRenderer(DrawableComponentPillowRenderer):
@@ -35,9 +41,7 @@ class RectanglePillowRenderer(DrawableComponentPillowRenderer):
 
 
 draw_rectangle = """
-__constant sampler_t sampler = CLK_NORMALIZED_COORDS_FALSE | CLK_FILTER_NEAREST | CLK_ADDRESS_CLAMP_TO_EDGE;
-
-__kernel void __NAME(__write_only image2d_t target, float4 color, float2 size, 
+__kernel void draw_rectangle(__write_only image2d_t target, float4 color, float2 size, 
                         float t1, float t2, float t3, float t4, float t5, float t6)
 {
     int x = get_global_id(0);
@@ -73,8 +77,8 @@ class RectangleHAPillowRenderer(DrawableComponentHAPillowRenderer):
                                           wait_for=None if event is None else [event])
 
     @classmethod
-    def register_programs(cls, renderer: HAPillowRenderer, isolation):
-        cls.mask_image_binding = isolation.register_kernel("draw_rectangle", draw_rectangle)
+    def register_programs(cls, renderer: HAPillowRenderer, reg: ClassBoundKernelRegistry):
+        reg.register_program("draw_rectangle", draw_rectangle)
 
 
 class RectangleComponent(DrawableComponent):

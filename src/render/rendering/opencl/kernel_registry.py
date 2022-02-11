@@ -1,93 +1,58 @@
 from __future__ import annotations
 
 import contextlib
+import math
+import string
 import typing
 from typing import TYPE_CHECKING
 
 import pyopencl as cl
 
 if TYPE_CHECKING:
-    pass
+    from render.rendering.opencl.component import DrawableComponentHAPillowRenderer
+
+header_code = """
+__constant sampler_t sampler = ;
+"""
+
+
+def to_letters(i: int):
+    return (
+            string.ascii_lowercase[i % len(string.ascii_lowercase)] +
+            ("" if i < len(string.ascii_lowercase) else to_letters(math.floor(i)))
+    )
 
 
 class BoundKernel:
-    def __init__(self, program: KernelRegistryProgram, name: str):
+    def __init__(self, program: cl.Program, name: str):
         self.name = name
         self.program = program
 
     @property
     def kernel(self) -> typing.Optional[cl.Kernel]:
-        return self.program.get_kernel(self.name)
-
-
-class KernelRegistryIsolation:
-    def __init__(self, program: KernelRegistryProgram):
-        self.idx = 0
-        self.program = program
-        self.unique_name_bind = {}
-        self.kernel_bindings = {}
-
-    def get_or_create(self, func_name: str) -> str:
-        if func_name not in self.unique_name_bind:
-            name = f"_{self.program.isolation_idx}_{self.idx}"
-            self.unique_name_bind[func_name] = name
-            self.idx += 1
-            return name
-
-        return self.unique_name_bind[func_name]
-
-    def register_kernel(self, func_name: str, code: str):
-        name = self.get_or_create(func_name)
-        self.unique_name_bind[func_name] = name
-        self.program.funcs[name] = code.replace("__NAME", name)
-
-        bind = BoundKernel(self.program, name)
-        self.kernel_bindings[func_name] = bind
-
-        return bind
-
-    def __getitem__(self, item):
-        return self.get_or_create(item)
-
-
-class KernelRegistryProgram:
-    def __init__(self, registry: KernelRegistry):
-        self._registry = registry
-        self._compiled: typing.Optional[cl.Program] = None
-
-        self.funcs: typing.Dict[str, str] = {}
-        self.isolation_idx: int = 0
-
-    @contextlib.contextmanager
-    def isolate(self):
-        try:
-            yield KernelRegistryIsolation(self)
-
-        finally:
-            self.isolation_idx += 1
-
-    def get_kernel(self, name):
-        if self._compiled is None:
-            return None
-
-        try:
-            return getattr(self._compiled, name)
-
-        except cl.LogicError:
-            return None
-
-    def compile(self):
-        if self._compiled is not None:
-            return
-
-        if self.funcs:
-            c_program = cl.Program(self._registry.context, "".join(self.funcs.values())).build()
-            self._compiled = c_program
+        return getattr(self.program, self.name)
 
 
 class KernelRegistry:
     def __init__(self, context: cl.Context):
         self.context = context
+        self.registered_classes = {}
 
-    def create_program(self):
-        return KernelRegistryProgram(self)
+    def init_class(self, cls):
+        self.registered_classes[cls] = {}
+        return ClassBoundKernelRegistry(self, cls)
+
+    def registered(self, cls):
+        return cls in self.registered_classes
+
+
+class ClassBoundKernelRegistry:
+    def __init__(self, registry: KernelRegistry, cls: typing.Type[DrawableComponentHAPillowRenderer]):
+        self.cls = cls
+        self.registry = registry
+
+    # noinspection PyProtectedMember
+    def register_program(self, kernel_name, code):
+        program = cl.Program(self.registry.context, code).build()
+        binding = BoundKernel(program, kernel_name)
+        self.registry.registered_classes[self.cls][kernel_name] = binding
