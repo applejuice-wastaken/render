@@ -8,10 +8,12 @@ import typing
 from PIL import Image
 
 from .deferrer import DeferredSetter
-from .drawer import ImageDrawCombination
-from .transform import Transform, transform_in_transform
+from .exceptions import RendererCompatibilityException
+
+from .transform import Transform
 
 if typing.TYPE_CHECKING:
+    from .rendering.abc import Renderer, DrawableComponentRenderer
     from .scene import Scene
 
 
@@ -179,49 +181,14 @@ class DrawableComponent(Component, abc.ABC):
         self.transform = Transform()
         self.z = 0
 
-    def draw(self, target: ImageDrawCombination, transform: Transform):
-        if self.mask is not None:
-            self_new_transform = transform_in_transform(transform, self.transform)
+        renderers = self.get_renderers()
 
-            with self.scene.image_pool.request_image(target.image.width, target.image.height,
-                                                     exact_dimensions=False) as self_image:
-                self._draw(self_image, self_new_transform)
+        try:
+            self.renderer = renderers[type(scene.renderer)](scene.renderer, self)
 
-                # self_image.image.show()
-                # we calculate the mask transform
-
-                if self.local_mask:
-                    mask_new_transform = transform_in_transform(transform, self.transform)
-                else:
-                    mask_new_transform = transform
-
-                with self.scene.image_pool.request_image(self_image.image.width, self_image.image.height) as mask_image:
-
-                    self.mask.draw(mask_image, mask_new_transform)
-
-                    with self.scene.image_pool.request_image(self_image.image.width, self_image.image.height,
-                                                             exact_dimensions=False) as intermediate:
-
-                        # masks do not blend with the target image, has to create another intermediate image
-
-                        if self.mask_channel != "A":
-                            image = mask_image.image.getchannel(self.mask_channel)
-
-                            intermediate.image.paste(self_image.image,
-                                                     (0, 0),
-                                                     mask=image)
-                        else:
-
-                            intermediate.image.paste(self_image.image,
-                                                     (0, 0),
-                                                     mask=mask_image.image)
-
-                        target.image.alpha_composite(intermediate.image,
-                                                     (0, 0))
-
-        else:
-            self._draw(target, transform_in_transform(transform, self.transform))
+        except KeyError:
+            raise RendererCompatibilityException(scene.renderer, self) from None
 
     @abc.abstractmethod
-    def _draw(self, target: ImageDrawCombination, transform: Transform):
+    def get_renderers(self) -> typing.Dict[typing.Type[Renderer], typing.Type[DrawableComponentRenderer]]:
         pass

@@ -1,11 +1,14 @@
 from __future__ import annotations
 
+import queue
 import typing
 from io import BytesIO
 from typing import TYPE_CHECKING
 
 import imageio
 import numpy
+
+import threading
 
 if TYPE_CHECKING:
     from .scene import Scene
@@ -29,33 +32,64 @@ def run_scene(scene: Scene, io=None, *,
     if io is None:
         io = BytesIO()
 
-    writer = None
+    save_thread = None
+    save_queue = queue.Queue()
 
-    for image, duration in scene:
-        if first_frame is None:
-            first_frame = image.copy()
-            first_duration = duration
+    try:
+        for idx, (image, duration) in enumerate(scene):
+            image: numpy.ndarray
 
-        else:
-            if writer is None:
-                writer = imageio.get_writer(io, format_if_animated, **kwargs_if_animated)
+            if first_frame is None:
+                first_frame = numpy.copy(image, subok=True)
+                first_duration = duration
 
-                writer._duration = first_duration
-                writer.append_data(numpy.array(first_frame))
+            else:
+                if save_thread is None:
+                    save_thread = threading.Thread(target=saver_thread, args=(io, save_queue), kwargs={
+                        "file_format": format_if_animated,
+                        "kwargs": kwargs_if_animated
+                    })
+
+                    save_thread.start()
+
+                    save_queue.put((first_frame, first_duration, idx))
+
+                    if not callback(io, scene.current_frame_second):
+                        raise RuntimeError("Callback stopped execution")
+
+                save_queue.put((numpy.copy(image, subok=True), duration, idx))
 
                 if not callback(io, scene.current_frame_second):
                     raise RuntimeError("Callback stopped execution")
 
-            writer._duration = duration
-            writer.append_data(numpy.array(image))
+        if save_thread is None:
+            imageio.imwrite(io, first_frame, format_if_static, **kwargs_if_static)
 
             if not callback(io, scene.current_frame_second):
                 raise RuntimeError("Callback stopped execution")
 
-    if writer is None:
-        first_frame.save(io, format_if_static, **kwargs_if_static)
+        else:
+            print("finished rendering")
+            save_queue.put(None)
 
-        if not callback(io, scene.current_frame_second):
-            raise RuntimeError("Callback stopped execution")
+    finally:
+        save_thread.join()
 
-    return io, writer is not None
+    return io, save_thread is not None
+
+
+def saver_thread(io, q: queue.Queue, *, file_format, kwargs):
+    writer = imageio.get_writer(io, file_format, **kwargs)
+
+    while True:
+        v = q.get()
+
+        if v is None:
+            print("finished saving")
+            return io
+
+        else:
+            frame, duration, idx = v
+
+            writer._duration = duration
+            writer.append_data(frame)
