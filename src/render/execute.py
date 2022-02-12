@@ -54,18 +54,18 @@ def run_scene(scene: Scene, io=None, *,
 
                     save_queue.put((first_frame, first_duration, idx))
 
-                    if not callback(io, scene.current_frame_second):
+                    if not callback(io, scene.scheduler.current_frame_second):
                         raise RuntimeError("Callback stopped execution")
 
                 save_queue.put((numpy.copy(image, subok=True), duration, idx))
 
-                if not callback(io, scene.current_frame_second):
+                if not callback(io, scene.scheduler.current_frame_second):
                     raise RuntimeError("Callback stopped execution")
 
         if save_thread is None:
             imageio.imwrite(io, first_frame, format_if_static, **kwargs_if_static)
 
-            if not callback(io, scene.current_frame_second):
+            if not callback(io, scene.scheduler.current_frame_second):
                 raise RuntimeError("Callback stopped execution")
 
         else:
@@ -73,6 +73,7 @@ def run_scene(scene: Scene, io=None, *,
             save_queue.put(None)
 
     finally:
+        save_queue.put(None)
         save_thread.join()
 
     return io, save_thread is not None

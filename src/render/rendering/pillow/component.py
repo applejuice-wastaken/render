@@ -3,7 +3,7 @@ from __future__ import annotations
 import abc
 from typing import TYPE_CHECKING
 
-from render.rendering.abc import DrawableComponentRenderer, Renderer
+from render.rendering.abc import DrawableComponentRenderer
 
 from render.transform import Transform, transform_in_transform
 

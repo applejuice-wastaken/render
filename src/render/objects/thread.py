@@ -1,4 +1,4 @@
-from ..component import LifecycleComponent
+from ..processing.extras import LifecycleComponent
 
 
 class ThreadComponent(LifecycleComponent):

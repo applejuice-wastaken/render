@@ -2,17 +2,19 @@ from __future__ import annotations
 
 import abc
 import inspect
-import math
 import typing
 import time
 
-from .component import Component, BaseLifecycleComponent, DrawableComponent
+from .component import Component, DrawableComponent
+from .processing.component import ActivelyUpdatedComponent, ProcessedComponent
+from .processing.extras import BaseLifecycleComponent
 from .objects.container import ContainerComponent
 from .objects.image import ImageComponent
 from .objects.primitive import RectangleComponent
 from .objects.text import TextComponent
 from .objects.thread import ThreadComponent
 from .objects.tweener import TweenComponent
+from render.processing.scheduler import Scheduler
 
 from .transform import Transform
 
@@ -27,20 +29,13 @@ class Scene(BaseLifecycleComponent, abc.ABC):
         cls.cache_keys = {}
 
     def __init__(self, *, renderer: Renderer):
-        self.current_second = 0
-        self.current_frame_second = 0
-        self._first_frame = True
+        self.renderer = renderer
+        self.scheduler = Scheduler()
 
         super().__init__(self)
 
-        self.__processing_objects: typing.List[Component] = []
-        self.__processing_objects.append(self)
-
         self.__drawing_objects: typing.List[DrawableComponent] = []
         self.__dirty_drawing_objects = False
-
-        self.min_frame_duration = 1 / 60
-        self.min_duration = 0
 
         self._width = 0
         self._height = 0
@@ -52,9 +47,7 @@ class Scene(BaseLifecycleComponent, abc.ABC):
 
         self.current_image = None
 
-        self._has_yielded = False
-
-        self.renderer = renderer
+        self.scheduler.add_active_object(self)
 
     @property
     def drawing_objects(self):
@@ -70,14 +63,14 @@ class Scene(BaseLifecycleComponent, abc.ABC):
 
     @width.setter
     def width(self, value):
-        if not self.first_frame:
+        if not self.scheduler.first_frame:
             raise RuntimeError("Width cannot be set after the first frame")
 
         self._width = value
 
     @height.setter
     def height(self, value):
-        if not self.first_frame:
+        if not self.scheduler.first_frame:
             raise RuntimeError("Height cannot be set after the first frame")
 
         self._height = value
@@ -87,65 +80,20 @@ class Scene(BaseLifecycleComponent, abc.ABC):
         return self._first_frame
 
     def __iter__(self):
-        self._update(self.current_second)
+        self._update(self.scheduler.current_second)
         self.renderer.init_scene(self)
 
         try:
-            while True:
-                start = time.perf_counter()
-                next_second = math.inf
-                update_funcs = []
-                update_required = False
+            frame = None
+            last_second = 0
 
-                for obj in self.__processing_objects:
-                    candidate_update_collection = obj.get_next_update(self.current_second)
-
-                    if candidate_update_collection is not None:
-                        candidate_second, candidate_func, is_required = candidate_update_collection
-
-                        if self.first_frame:
-                            should_add = 0 <= candidate_second <= next_second
-
-                        else:
-                            should_add = self.current_second < candidate_second <= next_second
-
-                        if should_add:
-                            if candidate_second < next_second:
-                                update_funcs.clear()
-                                next_second = candidate_second
-
-                            update_funcs.append(candidate_func)
-
-                            update_required = update_required or is_required
-
-                self.process_time += time.perf_counter() - start
-
-                if update_funcs and (update_required or self.min_duration > self.current_second):
-                    self.current_second = next_second
-
-                    for func in update_funcs:
-                        func(next_second)
-
-                    if self._first_frame or self.min_frame_duration < self.current_second - self.current_frame_second:
-                        self.current_image = self.render_frame()
-                        old_frame_second = self.current_frame_second
-                        self.current_frame_second = self.current_second
-
-                        if not self._first_frame:
-                            yield self.current_image, self.current_second - old_frame_second
-                            self._has_yielded = True
-
-                        self._first_frame = False
+            for command in self.scheduler:
+                if isinstance(command, str):
+                    frame = self.render_frame()
 
                 else:
-                    if self.min_duration > self.current_second:
-                        yield self.current_image, self.min_duration - self.current_second
-                        self._has_yielded = True
-
-                    if not self._has_yielded:
-                        yield self.current_image, 0
-
-                    break
+                    yield frame, command - last_second
+                    last_second = command
 
         finally:
             self.cleanup_objects()
@@ -159,10 +107,18 @@ class Scene(BaseLifecycleComponent, abc.ABC):
         self.__dirty_drawing_objects = True
 
     def process_object(self, obj):
-        self.__processing_objects.append(obj)
+        if isinstance(obj, ActivelyUpdatedComponent):
+            self.scheduler.add_active_object(obj)
+
+        else:
+            self.scheduler.add_passive_object(obj)
 
     def remove_process_object(self, obj):
-        self.__processing_objects.remove(obj)
+        if isinstance(obj, ActivelyUpdatedComponent):
+            self.scheduler.remove_active_object(obj)
+
+        else:
+            self.scheduler.remove_passive_object(obj)
 
     def render_frame(self):
         start = time.perf_counter()
@@ -176,10 +132,7 @@ class Scene(BaseLifecycleComponent, abc.ABC):
         return res
 
     def cleanup_objects(self):
-        for obj in self.__processing_objects:
-            obj.cleanup()
-
-        self.renderer.cleanup()
+        pass
 
     def create(self, cls, *args, **kwargs):
         init_kwargs = {}
@@ -223,7 +176,9 @@ class Scene(BaseLifecycleComponent, abc.ABC):
                 else:
                     raise ValueError(f"Object {current!r} has no property {chunk!r} to be set")
 
-        self.process_object(obj)
+        if isinstance(obj, ProcessedComponent):
+            self.process_object(obj)
+
         return obj
 
     def __getitem__(self, item):

@@ -4,10 +4,8 @@ import abc
 import typing
 from typing import TYPE_CHECKING
 
-
 if TYPE_CHECKING:
     from render.scene import Scene
-    from render.component import DrawableComponent
 
 
 class Renderer(abc.ABC):
@@ -37,17 +35,3 @@ class Renderer(abc.ABC):
 
     def drawing_objects_changed(self):
         pass
-
-
-class DrawableComponentRenderer(abc.ABC):
-    def __init__(self, renderer: Renderer, component: DrawableComponent):
-        self._component = component
-        self._renderer = renderer
-
-    @property
-    def component(self):
-        return self._component
-
-    @property
-    def renderer(self):
-        return self._renderer

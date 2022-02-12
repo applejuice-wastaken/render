@@ -8,6 +8,7 @@ from PIL import Image
 
 from render.rendering.pillow.drawing import ImageDrawCombination
 from ..component import DrawableComponent
+from ..processing.component import ActivelyUpdatedComponent
 from ..rendering.opencl.component import DrawableComponentHAPillowRenderer
 from ..rendering.opencl.renderer import HAPillowRenderer
 from ..rendering.pillow.component import DrawableComponentPillowRenderer
@@ -88,7 +89,7 @@ class ImageHAPillowRenderer(DrawableComponentHAPillowRenderer):
         reg.register_program("draw_image", draw_image)
 
 
-class ImageComponent(DrawableComponent):
+class ImageComponent(DrawableComponent, ActivelyUpdatedComponent):
     def __init__(self, scene, image):
         super().__init__(scene)
 

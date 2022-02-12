@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import math
+import random
 import time
 from functools import partial
 from typing import TYPE_CHECKING
@@ -10,6 +11,8 @@ from render.rendering.opencl.renderer import HAPillowRenderer
 from render.rendering.pillow.renderer import PillowRenderer
 from render.scene import Scene
 import pyopencl as cl
+
+from render.transform import Transform
 
 if TYPE_CHECKING:
     from render.objects.primitive import RectangleComponent
@@ -24,29 +27,36 @@ if TYPE_CHECKING:
 
 class MyScene(Scene):
     def lifecycle(self, t):
-        self.width = 100
-        self.height = 100
+        self.width = 1000
+        self.height = 1000
 
         for i in range(100):
-            rect: RectangleComponent = self.create_rectangle(10, 10, (255, 255, 255, 255))
+            print(i)
+            rect: RectangleComponent = self.create_rectangle(100, 100,
+                                                             (random.randint(200, 255),
+                                                              random.randint(200, 255),
+                                                              random.randint(200, 255), 255)
+                                                             )
+
+            rect.transform = Transform(position=(-100, -100))
             self.draw_object(rect)
 
             def u(r, value):
                 r.transform.position = (value, r.transform.position[1])
 
-            self.create_tween("easeInOutQuad", partial(u, rect), duration=10, begin_value=0, end_value=100)
+            self.create_tween("easeInOutQuad", partial(u, rect), duration=10, begin_value=-100, end_value=1000)
 
             def u(r, value):
                 r.transform.position = (r.transform.position[0], value)
 
-            self.create_tween("linear", partial(u, rect), duration=10, begin_value=0, end_value=100)
+            self.create_tween("linear", partial(u, rect), duration=10, begin_value=-100, end_value=1000)
 
             def u(r, value):
                 r.transform.angle = value
 
             self.create_tween("easeInSine", partial(u, rect), duration=10, begin_value=0, end_value=math.tau)
 
-            yield 0.1
+            yield 0.01
 
         return 0
 
@@ -57,10 +67,16 @@ devices = platform.get_devices(cl.device_type.GPU)  # get GPU devices of selecte
 device = devices[0]  # take first GPU
 context = cl.Context([device])  # put selected GPU into context object
 
+start = time.perf_counter()
 io, animated = run_scene(MyScene(renderer=HAPillowRenderer(context=context)))
+print(f"CL took {time.perf_counter() - start}")
 
-# proof that it's animated
-assert animated
+with open("clout.gif", "wb") as fp:
+    fp.write(io.getvalue())
 
-with open("out.gif", "wb") as fp:
+start = time.perf_counter()
+io, animated = run_scene(MyScene(renderer=PillowRenderer()))
+print(f"Pillow took {time.perf_counter() - start}")
+
+with open("pillowout.gif", "wb") as fp:
     fp.write(io.getvalue())
